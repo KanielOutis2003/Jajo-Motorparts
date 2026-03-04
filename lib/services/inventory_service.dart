@@ -1,126 +1,89 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/inventory_item.dart';
+import 'package:uuid/uuid.dart';
+import 'local_database.dart';
+import 'sync_service.dart';
+import 'notification_service.dart';
+import '../models/inventory_item.dart' as models;
 
 class InventoryService {
-  final _db = Supabase.instance.client;
+  final _sync = SyncService();
 
-  // ── ITEMS ──────────────────────────────────────────────
+  // ── READ (always from local SQLite — instant!) ────────
 
-  Future<List<InventoryItem>> getAllItems() async {
-    final data = await _db
-        .from('items')
-        .select()
-        .order('name', ascending: true);
-    return (data as List).map((e) => InventoryItem.fromMap(e)).toList();
-  }
+  Future<List<models.InventoryItem>> getAllItems() =>
+      LocalDatabase.getAllItems();
 
-  Future<InventoryItem?> getItemByBarcode(String barcode) async {
-    final data = await _db
-        .from('items')
-        .select()
-        .eq('barcode', barcode)
-        .maybeSingle();
-    return data != null ? InventoryItem.fromMap(data) : null;
-  }
+  Future<models.InventoryItem?> getItemByBarcode(String barcode) =>
+      LocalDatabase.getItemByBarcode(barcode);
 
-  Future<List<InventoryItem>> getLowStockItems() async {
+  Future<List<models.InventoryItem>> getLowStockItems() async {
     final all = await getAllItems();
-    return all.where((item) => item.isLowStock).toList();
+    return all.where((i) => i.isLowStock).toList();
   }
 
-  Future<void> addItem(InventoryItem item) async {
-    await _db.from('items').insert(item.toMap());
-  }
+  Future<List<models.Transaction>> getAllTransactions() =>
+      LocalDatabase.getAllTransactions();
 
-  Future<void> updateItem(InventoryItem item) async {
-    await _db.from('items').update(item.toMap()).eq('id', item.id);
-  }
+  Future<Map<String, double>> getSalesSummary() =>
+      LocalDatabase.getSalesSummary();
 
-  Future<void> deleteItem(String id) async {
-    await _db.from('items').delete().eq('id', id);
-  }
+  // ── WRITE (local first, sync to cloud if online) ──────
 
-  // ── STOCK IN (Restock) ────────────────────────────────
+  Future<void> addItem(models.InventoryItem item) => _sync.saveItem(item);
+
+  Future<void> updateItem(models.InventoryItem item) => _sync.updateItem(item);
+
+  Future<void> deleteItem(String id) => _sync.deleteItem(id);
 
   Future<void> restockItem({
-    required InventoryItem item,
+    required models.InventoryItem item,
     required int qty,
     required double unitPrice,
     String? notes,
   }) async {
-    // Update quantity
-    await _db.from('items').update({
-      'quantity': item.quantity + qty,
-    }).eq('id', item.id);
+    final newQty = item.quantity + qty;
+    await _sync.updateItemQuantity(item.id, newQty);
 
-    // Log transaction
-    await _db.from('transactions').insert({
-      'item_id': item.id,
-      'item_name': item.name,
-      'type': 'restock',
-      'quantity': qty,
-      'unit_price': unitPrice,
-      'total_price': unitPrice * qty,
-      'notes': notes,
-    });
+    final txn = models.Transaction(
+      id: const Uuid().v4(),
+      itemId: item.id,
+      itemName: item.name,
+      type: 'restock',
+      quantity: qty,
+      unitPrice: unitPrice,
+      totalPrice: unitPrice * qty,
+      notes: notes,
+      createdAt: DateTime.now(),
+      isSynced: false,
+    );
+    await _sync.saveTransaction(txn);
+    await NotificationService().notifyRestock(item.name, qty);
   }
 
-  // ── SELL (Stock Out) ──────────────────────────────────
-
   Future<String?> sellItem({
-    required InventoryItem item,
+    required models.InventoryItem item,
     required int qty,
     String? notes,
   }) async {
     if (item.quantity < qty) return 'Not enough stock!';
 
-    await _db.from('items').update({
-      'quantity': item.quantity - qty,
-    }).eq('id', item.id);
+    final newQty = item.quantity - qty;
+    await _sync.updateItemQuantity(item.id, newQty);
 
-    await _db.from('transactions').insert({
-      'item_id': item.id,
-      'item_name': item.name,
-      'type': 'sale',
-      'quantity': qty,
-      'unit_price': item.sellingPrice,
-      'total_price': item.sellingPrice * qty,
-      'notes': notes,
-    });
-
-    return null; // success
-  }
-
-  // ── REPORTS ───────────────────────────────────────────
-
-  Future<List<Transaction>> getTransactions({
-    DateTime? from,
-    DateTime? to,
-    String? type,
-  }) async {
-    var query = _db.from('transactions').select().order('created_at', ascending: false);
-
-    final data = await query;
-    List<Transaction> txns = (data as List).map((e) => Transaction.fromMap(e)).toList();
-
-    if (type != null) txns = txns.where((t) => t.type == type).toList();
-    if (from != null) txns = txns.where((t) => t.createdAt.isAfter(from)).toList();
-    if (to != null) txns = txns.where((t) => t.createdAt.isBefore(to)).toList();
-
-    return txns;
-  }
-
-  Future<Map<String, double>> getSalesSummary() async {
-    final txns = await getTransactions(type: 'sale');
-    final restocks = await getTransactions(type: 'restock');
-
-    double totalRevenue = txns.fold(0, (sum, t) => sum + t.totalPrice);
-    double totalCost = restocks.fold(0, (sum, t) => sum + t.totalPrice);
-
-    return {
-      'revenue': totalRevenue,
-      'cost': totalCost,
-      'profit': totalRevenue - totalCost,
-    };
+    final txn = models.Transaction(
+      id: const Uuid().v4(),
+      itemId: item.id,
+      itemName: item.name,
+      type: 'sale',
+      quantity: qty,
+      unitPrice: item.sellingPrice,
+      totalPrice: item.sellingPrice * qty,
+      notes: notes,
+      createdAt: DateTime.now(),
+      isSynced: false,
+    );
+    await _sync.saveTransaction(txn);
+    await NotificationService()
+        .notifySale(item.name, qty, item.sellingPrice * qty);
+    return null;
   }
 }

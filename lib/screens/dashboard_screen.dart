@@ -1,11 +1,14 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../models/inventory_item.dart';
+import 'dart:async';
+import '../services/sync_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../services/inventory_service.dart';
-import '../models/inventory_screen.dart';
-import '../models/scanner_screen.dart';
-import '../models/reports_screen.dart';
-
+import '../models/inventory_item.dart' as models;
+import 'inventory_screen.dart' as inv;
+import 'reports_screen.dart' as rep;
+import 'scanner_screen.dart' as scan;
+import '../utils/app_theme.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -14,219 +17,435 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _service = InventoryService();
-  List<InventoryItem> _allItems = [];
-  Map<String, double> _summary = {};
-  bool _loading = true;
-  int _selectedIndex = 0;
+  int _index = 0;
+  bool _online = true;
+  bool _physical = false;
+  late final SyncService _sync;
 
   @override
   void initState() {
     super.initState();
+    _sync = SyncService();
+    _online = _sync.isOnline;
+    _sync.onlineStream.listen((v) {
+      if (!mounted) return;
+      setState(() => _online = v);
+    });
+    _detectDevice();
+  }
+
+  Future<void> _detectDevice() async {
+    final info = DeviceInfoPlugin();
+    try {
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        final android = await info.androidInfo;
+        if (!mounted) return;
+        setState(() => _physical = android.isPhysicalDevice);
+      } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+        final ios = await info.iosInfo;
+        if (!mounted) return;
+        setState(() => _physical = ios.isPhysicalDevice);
+      } else {
+        setState(() => _physical = false);
+      }
+    } catch (_) {
+      setState(() => _physical = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      const _HomeDashboardPage(),
+      inv.InventoryScreen(onRefresh: () {}),
+      const rep.ReportsScreen(),
+      const scan.ScannerScreen(),
+    ];
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: const [
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: Color(0xFFE53935),
+              child: Text('JM',
+                  style: TextStyle(color: Colors.white, fontSize: 12)),
+            ),
+            SizedBox(width: 8),
+            Text('Jajo Motorparts'),
+          ],
+        ),
+        actions: [
+          if (_physical)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(Icons.phone_android, color: Colors.green),
+            ),
+          IconButton(
+            tooltip: 'Profile',
+            icon: const Icon(Icons.person),
+            onPressed: () => Navigator.of(context).pushNamed('/profile'),
+          ),
+          IconButton(
+            tooltip: 'Toggle Theme',
+            icon: const Icon(Icons.brightness_6),
+            onPressed: () => AppTheme.toggle(),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (!_online)
+            Container(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                      child: Text('Offline mode: changes will sync later')),
+                ],
+              ),
+            ),
+          Expanded(child: pages[_index]),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_filled), label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.inventory_2), label: 'Inventory'),
+          NavigationDestination(icon: Icon(Icons.assessment), label: 'Reports'),
+          NavigationDestination(
+              icon: Icon(Icons.qr_code_scanner), label: 'Scan'),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeDashboardPage extends StatefulWidget {
+  const _HomeDashboardPage({super.key});
+  @override
+  State<_HomeDashboardPage> createState() => _HomeDashboardPageState();
+}
+
+class _HomeDashboardPageState extends State<_HomeDashboardPage> {
+  final _service = InventoryService();
+  List<models.Transaction> _txns = [];
+  List<models.InventoryItem> _items = [];
+  DateTime _now = DateTime.now();
+  DateTime? _selectedDate;
+  bool _loading = true;
+  Timer? _clockTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() => _now = DateTime.now());
+    });
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    _allItems = await _service.getAllItems();
-    _summary = await _service.getSalesSummary();
-    setState(() => _loading = false);
+    final txns = await _service.getAllTransactions();
+    final items = await _service.getAllItems();
+    setState(() {
+      _txns = txns;
+      _items = items;
+      _loading = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final lowStock = _allItems.where((i) => i.isLowStock).toList();
-    final currency = NumberFormat.currency(symbol: '₱', decimalDigits: 2);
-
-    final screens = [
-      _buildHome(lowStock, currency),
-      InventoryScreen(onRefresh: _load),
-      const ScannerScreen(),
-      const ReportsScreen(),
-    ];
-
-    return Scaffold(
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFE53935)))
-          : screens[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) {
-          setState(() => _selectedIndex = i);
-          if (i == 0) _load();
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_rounded), label: 'Dashboard'),
-          NavigationDestination(icon: Icon(Icons.inventory_2_rounded), label: 'Inventory'),
-          NavigationDestination(icon: Icon(Icons.qr_code_scanner_rounded), label: 'Scanner'),
-          NavigationDestination(icon: Icon(Icons.bar_chart_rounded), label: 'Reports'),
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _dateTimeHeader(),
+          const SizedBox(height: 12),
+          _calendar(),
+          const SizedBox(height: 12),
+          _lineChart(),
+          const SizedBox(height: 12),
+          if (_selectedDate != null) _daySales(),
+          if (_selectedDate != null) const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Items',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Theme.of(context).colorScheme.onSurface)),
+                const SizedBox(height: 8),
+                if (_items.isEmpty)
+                  Text('No items',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.6)))
+                else
+                  ..._items.take(10).map((i) => ListTile(
+                        dense: true,
+                        leading: Icon(Icons.inventory_2,
+                            color: Theme.of(context).colorScheme.primary),
+                        title: Text(i.name),
+                        subtitle: Text(
+                            'Qty: ${i.quantity} • Sell: ₱${i.sellingPrice}'),
+                      )),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildHome(List<InventoryItem> lowStock, NumberFormat currency) {
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _load,
-        color: const Color(0xFFE53935),
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Header
-            Row(
-              children: [
-                const Icon(Icons.motorcycle, color: Color(0xFFE53935), size: 32),
-                const SizedBox(width: 8),
-                Text('Moto Inventory',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text('Today: ${DateFormat('MMMM d, yyyy').format(DateTime.now())}',
-                style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 20),
-
-            // Stats row
-            Row(children: [
-              _statCard('Total Items', '${_allItems.length}', Icons.inventory_2, Colors.blue),
-              const SizedBox(width: 12),
-              _statCard('Low Stock', '${lowStock.length}', Icons.warning_amber, Colors.orange),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              _statCard('Revenue', currency.format(_summary['revenue'] ?? 0),
-                  Icons.trending_up, Colors.green),
-              const SizedBox(width: 12),
-              _statCard('Profit', currency.format(_summary['profit'] ?? 0),
-                  Icons.attach_money, const Color(0xFFE53935)),
-            ]),
-
-            // Low stock alert
-            if (lowStock.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.orange.withOpacity(0.4)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      const Icon(Icons.warning_amber, color: Colors.orange),
-                      const SizedBox(width: 8),
-                      Text('Low Stock Alert (${lowStock.length} items)',
-                          style: const TextStyle(
-                              color: Colors.orange, fontWeight: FontWeight.bold)),
-                    ]),
-                    const SizedBox(height: 10),
-                    ...lowStock.map((item) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(child: Text(item.name,
-                                  style: const TextStyle(color: Colors.white70))),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text('${item.quantity} left',
-                                    style: const TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12)),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-                ),
-              ),
-            ],
-
-            // Quick action buttons
-            const SizedBox(height: 24),
-            Text('Quick Actions',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Row(children: [
-              _quickAction(context, 'Scan & Add Stock', Icons.add_circle_outline,
-                  const Color(0xFF1E88E5), () {
-                setState(() => _selectedIndex = 2);
-              }),
-              const SizedBox(width: 12),
-              _quickAction(context, 'View All Items', Icons.list_alt_rounded,
-                  const Color(0xFF43A047), () {
-                setState(() => _selectedIndex = 1);
-              }),
-            ]),
-          ],
-        ),
+  Widget _dateTimeHeader() {
+    final date =
+        '${_now.year}-${_now.month.toString().padLeft(2, '0')}-${_now.day.toString().padLeft(2, '0')}';
+    final time =
+        '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}:${_now.second.toString().padLeft(2, '0')}';
+    final muted = Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
       ),
-    );
-  }
-
-  Widget _statCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(value,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Today',
                 style: TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-            Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          ],
-        ),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.onSurface)),
+            const SizedBox(height: 2),
+            Text('$date • $time', style: TextStyle(color: muted)),
+          ]),
+          IconButton(onPressed: _load, icon: Icon(Icons.refresh, color: muted))
+        ],
       ),
     );
   }
 
-  Widget _quickAction(BuildContext context, String label, IconData icon,
-      Color color, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+  Widget _calendar() {
+    final firstDay = DateTime(_now.year, _now.month, 1);
+    final startWeekday = firstDay.weekday % 7;
+    final daysInMonth = DateTime(_now.year, _now.month + 1, 0).day;
+    final cells = <Widget>[];
+    for (int i = 0; i < startWeekday; i++) {
+      cells.add(const SizedBox());
+    }
+    for (int d = 1; d <= daysInMonth; d++) {
+      final isToday = d == _now.day;
+      final isSelected =
+          _selectedDate?.day == d && _selectedDate?.month == _now.month;
+      cells.add(GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedDate = DateTime(_now.year, _now.month, d);
+          });
+        },
         child: Container(
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.4)),
+            color: isToday
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+                : null,
+            borderRadius: BorderRadius.circular(8),
+            border: isToday || isSelected
+                ? Border.all(color: Theme.of(context).colorScheme.primary)
+                : null,
           ),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 32),
-              const SizedBox(height: 8),
-              Text(label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: color, fontWeight: FontWeight.w600, fontSize: 13)),
-            ],
+          child: Center(
+            child: Text('$d',
+                style: TextStyle(
+                  fontWeight: isToday || isSelected
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                )),
           ),
         ),
+      ));
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Calendar',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface)),
+              Text('Sun Mon Tue Wed Thu Fri Sat',
+                  style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                      fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: cells,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lineChart() {
+    final primary = Theme.of(context).colorScheme.primary;
+    final bg = Theme.of(context).cardColor;
+    final textColor = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+    final days = List.generate(14, (i) {
+      final d = DateTime(_now.year, _now.month, _now.day)
+          .subtract(Duration(days: 13 - i));
+      final sum = _txns
+          .where((t) => t.type == 'sale')
+          .where((t) =>
+              t.createdAt.year == d.year &&
+              t.createdAt.month == d.month &&
+              t.createdAt.day == d.day)
+          .fold(0.0, (s, t) => s + t.totalPrice);
+      return sum;
+    });
+    final spots =
+        List.generate(days.length, (i) => FlSpot(i.toDouble(), days[i]));
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Daily Revenue (14 days)',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 160,
+            child: LineChart(
+              LineChartData(
+                backgroundColor: bg,
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 3,
+                      getTitlesWidget: (v, _) => Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('D${v.toInt() + 1}',
+                            style: TextStyle(color: textColor, fontSize: 10)),
+                      ),
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: primary,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                        show: true, color: primary.withValues(alpha: 0.15)),
+                    barWidth: 3,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _daySales() {
+    final d = _selectedDate!;
+    final sales = _txns
+        .where((t) => t.type == 'sale')
+        .where((t) =>
+            t.createdAt.year == d.year &&
+            t.createdAt.month == d.month &&
+            t.createdAt.day == d.day)
+        .toList();
+    final muted = Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+              'Sales on ${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface)),
+          const SizedBox(height: 8),
+          if (sales.isEmpty)
+            Text('No sales', style: TextStyle(color: muted))
+          else
+            ...sales.take(6).map((t) => ListTile(
+                  dense: true,
+                  leading: Icon(Icons.sell,
+                      color: Theme.of(context).colorScheme.primary),
+                  title: Text(t.itemName),
+                  trailing: Text('₱${t.totalPrice.toStringAsFixed(0)}'),
+                )),
+        ],
       ),
     );
   }
