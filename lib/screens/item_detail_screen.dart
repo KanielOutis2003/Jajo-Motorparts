@@ -11,9 +11,7 @@ class ItemDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(item.name,
-              style:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(item.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           _row('Category', item.category ?? '—'),
           _row('Motorcycle', item.motorcycle ?? '—'),
@@ -39,8 +37,7 @@ class ItemDetailScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Expanded(
-              child: Text(label, style: const TextStyle(color: Colors.grey))),
+          Expanded(child: Text(label, style: const TextStyle(color: Colors.grey))),
           Text(value),
         ],
       ),

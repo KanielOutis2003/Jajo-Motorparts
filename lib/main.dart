@@ -151,21 +151,7 @@ class _AuthGateState extends State<_AuthGate> {
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      if (!_online) {
-        return Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.wifi_off, color: Colors.orange, size: 40),
-                SizedBox(height: 12),
-                Text('Connect to the internet to log in'),
-              ],
-            ),
-          ),
-        );
-      }
-      return const LoginScreen();
+      return _online ? const LoginScreen() : const DashboardScreen();
     }
     return const DashboardScreen();
   }

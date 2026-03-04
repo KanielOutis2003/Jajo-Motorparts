@@ -4,7 +4,8 @@ import '../models/inventory_item.dart' as models;
 import '../services/inventory_service.dart';
 import 'dart:io';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:downloads_path_provider_28/downloads_path_provider_28.dart';
+import 'dart:io' show Platform;
+import 'package:path/path.dart' as p;
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -229,10 +230,9 @@ class _ReportsScreenState extends State<ReportsScreen>
     }).toList();
     final csv = '${headers.join(',')}\n${rows.join('\n')}';
     try {
-      final dir = await DownloadsPathProvider.downloadsDirectory;
-      final path = dir?.path ?? '/storage/emulated/0/Download';
-      final file =
-          File('$path/reports_${DateTime.now().millisecondsSinceEpoch}.csv');
+      final path = _downloadsPath();
+      final file = File(
+          p.join(path, 'reports_${DateTime.now().millisecondsSinceEpoch}.csv'));
       await file.writeAsString(csv);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -271,14 +271,27 @@ class _ReportsScreenState extends State<ReportsScreen>
       ),
     );
     try {
-      final dir = await DownloadsPathProvider.downloadsDirectory;
-      final path = dir?.path ?? '/storage/emulated/0/Download';
-      final file =
-          File('$path/reports_${DateTime.now().millisecondsSinceEpoch}.pdf');
+      final path = _downloadsPath();
+      final file = File(
+          p.join(path, 'reports_${DateTime.now().millisecondsSinceEpoch}.pdf'));
       await file.writeAsBytes(await doc.save());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('PDF saved to Downloads: ${file.path}')));
     } catch (_) {}
+  }
+
+  String _downloadsPath() {
+    if (Platform.isAndroid) {
+      return '/storage/emulated/0/Download';
+    } else if (Platform.isIOS) {
+      return Directory.systemTemp.path;
+    } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      final home = Platform.environment['USERPROFILE'] ??
+          Platform.environment['HOME'] ??
+          '.';
+      return p.join(home, 'Downloads');
+    }
+    return '.';
   }
 }

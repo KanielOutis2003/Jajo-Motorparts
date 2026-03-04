@@ -9,6 +9,8 @@ import 'inventory_screen.dart' as inv;
 import 'reports_screen.dart' as rep;
 import 'scanner_screen.dart' as scan;
 import '../utils/app_theme.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -64,15 +66,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Row(
-          children: const [
+          children: [
             CircleAvatar(
               radius: 14,
-              backgroundColor: Color(0xFFE53935),
-              child: Text('JM',
-                  style: TextStyle(color: Colors.white, fontSize: 12)),
+              backgroundColor: const Color(0xFFE53935),
+              child: SvgPicture.asset(
+                'assets/images/jajo_motorparts_icon.svg',
+                height: 14,
+                width: 14,
+                colorFilter:
+                    const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+              ),
             ),
-            SizedBox(width: 8),
-            Text('Jajo Motorparts'),
+            const SizedBox(width: 8),
+            const Text('Jajo Motorparts'),
           ],
         ),
         actions: [
@@ -182,8 +189,6 @@ class _HomeDashboardPageState extends State<_HomeDashboardPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _dateTimeHeader(),
-          const SizedBox(height: 12),
           _calendar(),
           const SizedBox(height: 12),
           _lineChart(),
@@ -229,36 +234,6 @@ class _HomeDashboardPageState extends State<_HomeDashboardPage> {
     );
   }
 
-  Widget _dateTimeHeader() {
-    final date =
-        '${_now.year}-${_now.month.toString().padLeft(2, '0')}-${_now.day.toString().padLeft(2, '0')}';
-    final time =
-        '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}:${_now.second.toString().padLeft(2, '0')}';
-    final muted = Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Today',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Theme.of(context).colorScheme.onSurface)),
-            const SizedBox(height: 2),
-            Text('$date • $time', style: TextStyle(color: muted)),
-          ]),
-          IconButton(onPressed: _load, icon: Icon(Icons.refresh, color: muted))
-        ],
-      ),
-    );
-  }
-
   Widget _calendar() {
     final firstDay = DateTime(_now.year, _now.month, 1);
     final startWeekday = firstDay.weekday % 7;
@@ -299,6 +274,9 @@ class _HomeDashboardPageState extends State<_HomeDashboardPage> {
         ),
       ));
     }
+    final time12h = DateFormat('hh:mm:ss a').format(_now);
+    final date =
+        '${_now.year}-${_now.month.toString().padLeft(2, '0')}-${_now.day.toString().padLeft(2, '0')}';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -310,18 +288,43 @@ class _HomeDashboardPageState extends State<_HomeDashboardPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Calendar',
+              Text('Calendar • $date',
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.onSurface)),
-              Text('Sun Mon Tue Wed Thu Fri Sat',
+              Row(
+                children: [
+                  Text(time12h,
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.8))),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    onPressed: _load,
+                    icon: Icon(
+                      Icons.refresh,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.6),
+                    ),
+                  )
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Sun Mon Tue Wed Thu Fri Sat',
                   style: TextStyle(
                       color: Theme.of(context)
                           .colorScheme
                           .onSurface
                           .withOpacity(0.6),
                       fontSize: 12)),
-            ],
           ),
           const SizedBox(height: 8),
           GridView.count(

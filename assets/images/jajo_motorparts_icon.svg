@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5555"/>
+      <stop offset="100%" stop-color="#C42B2B"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background square with rounded corners -->
+  <rect width="200" height="200" rx="40" fill="#0E0E0E"/>
+
+  <!-- Outer border -->
+  <rect width="200" height="200" rx="40" fill="none" stroke="#E84545" stroke-width="1" opacity="0.2"/>
+
+  <!-- Subtle grid -->
+  <g opacity="0.05" stroke="#F0EDE8" stroke-width="1">
+    <line x1="0" y1="50" x2="200" y2="50"/>
+    <line x1="0" y1="100" x2="200" y2="100"/>
+    <line x1="0" y1="150" x2="200" y2="150"/>
+    <line x1="50" y1="0" x2="50" y2="200"/>
+    <line x1="100" y1="0" x2="100" y2="200"/>
+    <line x1="150" y1="0" x2="150" y2="200"/>
+  </g>
+
+  <!-- Wheel outer ring -->
+  <circle cx="100" cy="95" r="60" fill="none" stroke="#1C1C1C" stroke-width="8"/>
+  <circle cx="100" cy="95" r="60" fill="none" stroke="#2A2A2A" stroke-width="1.5"/>
+
+  <!-- Accent arc -->
+  <circle cx="100" cy="95" r="60"
+          fill="none"
+          stroke="url(#redGrad)"
+          stroke-width="3"
+          stroke-dasharray="100 280"
+          stroke-dashoffset="-30"
+          filter="url(#glow)"
+          stroke-linecap="round"/>
+
+  <!-- Spokes -->
+  <g transform="translate(100,95)" stroke="#2A2A2A" stroke-width="1.2">
+    <line x1="0" y1="-52" x2="0" y2="52"/>
+    <line x1="-52" y1="0" x2="52" y2="0"/>
+    <line x1="-37" y1="-37" x2="37" y2="37"/>
+    <line x1="37" y1="-37" x2="-37" y2="37"/>
+  </g>
+
+  <!-- Hub -->
+  <circle cx="100" cy="95" r="16" fill="#161616" stroke="#2A2A2A" stroke-width="1.5"/>
+  <circle cx="100" cy="95" r="8" fill="url(#redGrad)" filter="url(#glow)"/>
+
+  <!-- "JM" monogram below wheel -->
+  <text x="100" y="178"
+        font-family="'Arial Black', 'Helvetica Neue', sans-serif"
+        font-size="15"
+        font-weight="900"
+        letter-spacing="4"
+        fill="#8A8480"
+        text-anchor="middle">JM</text>
+
+  <!-- Red dot accent -->
+  <circle cx="130" cy="173" r="2.5" fill="#E84545" filter="url(#glow)"/>
+</svg>

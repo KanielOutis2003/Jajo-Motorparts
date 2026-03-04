@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/sync_service.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -67,6 +68,12 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            const SizedBox(height: 12),
+            SvgPicture.asset(
+              'assets/images/jajo_motorparts_logo.svg',
+              height: 64,
+            ),
+            const SizedBox(height: 12),
             if (!_online)
               Container(
                 padding: const EdgeInsets.all(12),

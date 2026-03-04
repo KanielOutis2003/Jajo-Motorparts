@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -12,6 +14,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _passwordCtrl = TextEditingController();
   bool _saving = false;
   String? _msg;
+  String? _avatarUrl;
 
   @override
   void initState() {
@@ -19,6 +22,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = Supabase.instance.client.auth.currentUser;
     final name = user?.userMetadata?['full_name'] as String?;
     _nameCtrl.text = name ?? '';
+    final avatar = user?.userMetadata?['avatar_url'] as String?;
+    _avatarUrl = avatar;
   }
 
   Future<void> _saveProfile() async {
@@ -28,11 +33,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
     try {
       await Supabase.instance.client.auth.updateUser(
-        UserAttributes(data: {'full_name': _nameCtrl.text.trim()}),
+        UserAttributes(data: {
+          'full_name': _nameCtrl.text.trim(),
+          if (_avatarUrl != null) 'avatar_url': _avatarUrl,
+        }),
       );
       setState(() => _msg = 'Profile updated');
     } catch (_) {
       setState(() => _msg = 'Failed to update profile');
+    } finally {
+      setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _pickAndUploadAvatar() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    try {
+      final picker = ImagePicker();
+      final picked =
+          await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (picked == null) return;
+      setState(() {
+        _saving = true;
+        _msg = null;
+      });
+      final file = File(picked.path);
+      final storage = Supabase.instance.client.storage;
+      final objectPath = 'avatars/${user.id}.jpg';
+      await storage
+          .from('avatars')
+          .upload(objectPath, file, fileOptions: const FileOptions(upsert: true));
+      final publicUrl =
+          storage.from('avatars').getPublicUrl(objectPath);
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(data: {'avatar_url': publicUrl}),
+      );
+      setState(() {
+        _avatarUrl = publicUrl;
+        _msg = 'Profile photo updated';
+      });
+    } catch (_) {
+      setState(() => _msg = 'Failed to update profile photo');
     } finally {
       setState(() => _saving = false);
     }
@@ -72,17 +114,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: const Color(0xFFE53935),
-                  child: Text(
-                    (user?.email ?? 'U')[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: const Color(0xFFE53935),
+                      backgroundImage:
+                          _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+                      child: _avatarUrl == null
+                          ? Text(
+                              (user?.email ?? 'U')[0].toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
                     ),
-                  ),
+                    IconButton(
+                      onPressed: _saving ? null : _pickAndUploadAvatar,
+                      icon: const Icon(Icons.camera_alt, size: 18),
+                      color: Theme.of(context).colorScheme.onSurface,
+                      style: IconButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 12),
                 Expanded(
