@@ -51,9 +51,9 @@ class LocalDatabase {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          final columns =
-              await db.rawQuery('PRAGMA table_info(items)');
-          final hasMoto = columns.any((c) => (c['name'] as String) == 'motorcycle');
+          final columns = await db.rawQuery('PRAGMA table_info(items)');
+          final hasMoto =
+              columns.any((c) => (c['name'] as String) == 'motorcycle');
           if (!hasMoto) {
             await db.execute('ALTER TABLE items ADD COLUMN motorcycle TEXT');
           }

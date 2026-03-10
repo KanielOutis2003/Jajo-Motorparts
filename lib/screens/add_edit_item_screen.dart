@@ -134,20 +134,37 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       createdAt: widget.item?.createdAt ?? DateTime.now(),
     );
 
-    if (widget.item == null) {
-      await _service.addItem(item);
-    } else {
-      await _service.updateItem(item);
-    }
+    try {
+      if (widget.item == null) {
+        await _service.addItem(item);
+      } else {
+        await _service.updateItem(item);
+      }
 
-    if (!mounted) return;
-    if (widget.item == null) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)),
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(widget.item == null
+                ? 'Item added successfully'
+                : 'Item updated successfully')),
       );
-    } else {
-      Navigator.pop(context, true);
+
+      if (widget.item == null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)),
+        );
+      } else {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving item: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 

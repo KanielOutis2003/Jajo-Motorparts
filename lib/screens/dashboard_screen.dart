@@ -10,7 +10,6 @@ import 'reports_screen.dart' as rep;
 import 'scanner_screen.dart' as scan;
 import '../utils/app_theme.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -70,12 +69,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             CircleAvatar(
               radius: 14,
               backgroundColor: const Color(0xFFE53935),
-              child: SvgPicture.asset(
-                'assets/images/jajo_motorparts_icon.svg',
-                height: 14,
-                width: 14,
-                colorFilter:
-                    const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/jajo_motorparts.png',
+                  height: 28,
+                  width: 28,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -83,11 +83,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         actions: [
-          if (_physical)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Icon(Icons.phone_android, color: Colors.green),
-            ),
+          IconButton(
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_none),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No new notifications')),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.person),
@@ -319,12 +323,12 @@ class _HomeDashboardPageState extends State<_HomeDashboardPage> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text('Sun Mon Tue Wed Thu Fri Sat',
-                  style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.6),
-                      fontSize: 12)),
+                style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withOpacity(0.6),
+                    fontSize: 12)),
           ),
           const SizedBox(height: 8),
           GridView.count(

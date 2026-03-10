@@ -4,8 +4,8 @@ import '../models/inventory_item.dart' as models;
 import '../services/inventory_service.dart';
 import 'dart:io';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:io' show Platform;
 import 'package:path/path.dart' as p;
+import 'package:fl_chart/fl_chart.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -24,15 +24,24 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    _txns = await _service.getAllTransactions();
-    _summary = await _service.getSalesSummary();
-    setState(() => _loading = false);
+    try {
+      _txns = await _service.getAllTransactions();
+      _summary = await _service.getSalesSummary();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading reports: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -92,10 +101,12 @@ class _ReportsScreenState extends State<ReportsScreen>
           ],
           TabBar(
             controller: _tabs,
+            isScrollable: true,
             indicatorColor: const Color(0xFFE53935),
             labelColor: const Color(0xFFE53935),
             unselectedLabelColor: Colors.grey,
             tabs: const [
+              Tab(text: 'Trends'),
               Tab(text: 'All'),
               Tab(text: 'Sales'),
               Tab(text: 'Restocks'),
@@ -107,6 +118,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                 : TabBarView(
                     controller: _tabs,
                     children: [
+                      _trendsView(),
                       _txnList(_txns, dateFormat, currency),
                       _txnList(_txns.where((t) => t.type == 'sale').toList(),
                           dateFormat, currency),
@@ -115,6 +127,93 @@ class _ReportsScreenState extends State<ReportsScreen>
                     ],
                   ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trendsView() {
+    if (_txns.isEmpty) return const Center(child: Text('No data for trends'));
+
+    // Group sales by day (last 7 days)
+    final now = DateTime.now();
+    final last7Days =
+        List.generate(7, (i) => now.subtract(Duration(days: 6 - i)));
+    final dailySales = <DateTime, double>{};
+
+    for (var day in last7Days) {
+      final dateOnly = DateTime(day.year, day.month, day.day);
+      dailySales[dateOnly] = 0;
+    }
+
+    for (var t in _txns.where((t) => t.type == 'sale')) {
+      final dateOnly =
+          DateTime(t.createdAt.year, t.createdAt.month, t.createdAt.day);
+      if (dailySales.containsKey(dateOnly)) {
+        dailySales[dateOnly] = (dailySales[dateOnly] ?? 0) + t.totalPrice;
+      }
+    }
+
+    final spots = dailySales.values.toList().asMap().entries.map((e) {
+      return FlSpot(e.key.toDouble(), e.value);
+    }).toList();
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Daily Sales (Last 7 Days)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 32),
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                gridData: const FlGridData(show: false),
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (val, meta) {
+                        if (val < 0 || val >= last7Days.length)
+                          return const Text('');
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            DateFormat('E').format(last7Days[val.toInt()]),
+                            style: const TextStyle(
+                                fontSize: 10, color: Colors.grey),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: const Color(0xFFE53935),
+                    barWidth: 4,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: const Color(0xFFE53935).withValues(alpha: 0.1),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -144,14 +243,12 @@ class _ReportsScreenState extends State<ReportsScreen>
   Widget _txnList(List<models.Transaction> txns, DateFormat dateFmt,
       NumberFormat currency) {
     if (txns.isEmpty) {
-      return Center(
-        child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Icon(Icons.receipt_long_outlined, color: Colors.grey, size: 48),
-              SizedBox(height: 12),
-              Text('No transactions yet', style: TextStyle(color: Colors.grey)),
-            ]),
+      return const Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.receipt_long_outlined, color: Colors.grey, size: 48),
+          SizedBox(height: 12),
+          Text('No transactions yet', style: TextStyle(color: Colors.grey)),
+        ]),
       );
     }
 

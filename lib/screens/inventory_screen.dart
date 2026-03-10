@@ -19,6 +19,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<InventoryItem> _filtered = [];
   bool _loading = true;
   String _search = '';
+  String? _selectedCategory;
+  bool _showLowStockOnly = false;
 
   @override
   void initState() {
@@ -28,30 +30,48 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    _items = await _service.getAllItems();
-    _applyFilter();
-    setState(() => _loading = false);
+    try {
+      _items = await _service.getAllItems();
+      _applyFilter();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading inventory: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   void _applyFilter() {
-    _filtered = _items
-        .where((i) =>
-            i.name.toLowerCase().contains(_search.toLowerCase()) ||
-            (i.barcode?.contains(_search) ?? false) ||
-            (i.category?.toLowerCase().contains(_search.toLowerCase()) ??
-                false))
-        .toList();
+    _filtered = _items.where((i) {
+      final matchesSearch =
+          i.name.toLowerCase().contains(_search.toLowerCase()) ||
+              (i.barcode?.contains(_search) ?? false) ||
+              (i.category?.toLowerCase().contains(_search.toLowerCase()) ??
+                  false);
+      final matchesCategory =
+          _selectedCategory == null || i.category == _selectedCategory;
+      final matchesLowStock = !_showLowStockOnly || i.isLowStock;
+
+      return matchesSearch && matchesCategory && matchesLowStock;
+    }).toList();
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final currency = NumberFormat.currency(symbol: '₱');
+    final categories =
+        _items.map((e) => e.category).whereType<String>().toSet().toList();
+    categories.sort();
+
     return SafeArea(
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
                 Expanded(
@@ -62,7 +82,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     },
                     textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
-                      hintText: 'Search items, barcode, category...',
+                      hintText: 'Search items, barcode...',
                       prefixIcon: Icon(Icons.search),
                     ),
                   ),
@@ -80,6 +100,46 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   },
                   child: const Icon(Icons.add),
                 ),
+              ],
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('Low Stock'),
+                  selected: _showLowStockOnly,
+                  onSelected: (v) {
+                    setState(() => _showLowStockOnly = v);
+                    _applyFilter();
+                  },
+                ),
+                const SizedBox(width: 8),
+                const VerticalDivider(width: 1),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: _selectedCategory == null,
+                  onSelected: (v) {
+                    if (v) {
+                      setState(() => _selectedCategory = null);
+                      _applyFilter();
+                    }
+                  },
+                ),
+                ...categories.map((cat) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: ChoiceChip(
+                        label: Text(cat),
+                        selected: _selectedCategory == cat,
+                        onSelected: (v) {
+                          setState(() => _selectedCategory = v ? cat : null);
+                          _applyFilter();
+                        },
+                      ),
+                    )),
               ],
             ),
           ),

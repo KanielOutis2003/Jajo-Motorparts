@@ -31,8 +31,24 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+flutter_icons:
+  android: true
+  ios: false
+  image_path: assets/images/jajo_motorparts.png
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/jajo_motorparts.png
+  color_dark: "#151515"
+  image_dark: assets/images/jajo_motorparts.png
+  android_12:
+    image: assets/images/jajo_motorparts.png
+    color: "#FFFFFF"
